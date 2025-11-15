@@ -9,6 +9,7 @@ export function initGame(canvasId: string): void {
     width: 800,
     height: 600,
     background: [20, 20, 40],
+    touchToMouse: true, // Enable touch events
   });
 
   // Set gravity
@@ -201,7 +202,72 @@ export function initGame(canvasId: string): void {
 
     ctx.wait(3, spawnObstacle);
 
-    // Player controls
+    // Mobile control state
+    let leftPressed = false;
+    let rightPressed = false;
+
+    // Set up mobile button controls
+    const leftBtn = document.getElementById('btn-left');
+    const rightBtn = document.getElementById('btn-right');
+    const jumpBtn = document.getElementById('btn-jump');
+
+    // Handle jumping with double jump
+    function doJump() {
+      if (gameOver) return;
+      if (player.isGrounded()) {
+        player.jump(600); // Increased from 500
+        jumpsLeft = hasDoubleJump ? 2 : 1;
+      } else if (jumpsLeft > 0 && hasDoubleJump) {
+        player.jump(600); // Increased from 500
+        jumpsLeft--;
+      }
+    }
+
+    // Mobile touch controls
+    if (leftBtn) {
+      const startLeft = (e: Event) => {
+        e.preventDefault();
+        leftPressed = true;
+      };
+      const endLeft = (e: Event) => {
+        e.preventDefault();
+        leftPressed = false;
+      };
+      leftBtn.addEventListener('touchstart', startLeft);
+      leftBtn.addEventListener('touchend', endLeft);
+      leftBtn.addEventListener('touchcancel', endLeft);
+      leftBtn.addEventListener('mousedown', startLeft);
+      leftBtn.addEventListener('mouseup', endLeft);
+      leftBtn.addEventListener('mouseleave', endLeft);
+    }
+
+    if (rightBtn) {
+      const startRight = (e: Event) => {
+        e.preventDefault();
+        rightPressed = true;
+      };
+      const endRight = (e: Event) => {
+        e.preventDefault();
+        rightPressed = false;
+      };
+      rightBtn.addEventListener('touchstart', startRight);
+      rightBtn.addEventListener('touchend', endRight);
+      rightBtn.addEventListener('touchcancel', endRight);
+      rightBtn.addEventListener('mousedown', startRight);
+      rightBtn.addEventListener('mouseup', endRight);
+      rightBtn.addEventListener('mouseleave', endRight);
+    }
+
+    if (jumpBtn) {
+      const handleJump = (e: Event) => {
+        e.preventDefault();
+        doJump();
+      };
+      jumpBtn.addEventListener('touchstart', handleJump);
+      jumpBtn.addEventListener('mousedown', handleJump);
+    }
+
+    // Player controls - keyboard
     ctx.onKeyDown('left', () => {
       if (!gameOver) player.move(-300, 0);
     });
@@ -218,18 +284,6 @@ export function initGame(canvasId: string): void {
       if (!gameOver) player.move(300, 0);
     });
 
-    // Handle jumping with double jump
-    function doJump() {
-      if (gameOver) return;
-      if (player.isGrounded()) {
-        player.jump(600); // Increased from 500
-        jumpsLeft = hasDoubleJump ? 2 : 1;
-      } else if (jumpsLeft > 0 && hasDoubleJump) {
-        player.jump(600); // Increased from 500
-        jumpsLeft--;
-      }
-    }
-
     ctx.onKeyPress('space', doJump);
     ctx.onKeyPress('up', doJump);
     ctx.onKeyPress('w', doJump);
@@ -242,20 +296,20 @@ export function initGame(canvasId: string): void {
     // Collect coins with combo system
     player.onCollide('coin', (coin) => {
       ctx.destroy(coin);
-      
+
       // Combo system
       combo++;
       comboTimer = 3; // 3 seconds to maintain combo
       const multiplier = Math.min(combo, 10);
       const points = 10 * multiplier;
       score += points;
-      
+
       scoreLabel.text = `Score: ${score}`;
       comboLabel.text = combo > 1 ? `Combo x${combo}!` : '';
-      
+
       // Visual feedback
       ctx.shake(2);
-      
+
       spawnCoin();
     });
 
@@ -369,6 +423,12 @@ export function initGame(canvasId: string): void {
 
     // Keep player in bounds and reset if falling off
     player.onUpdate(() => {
+      // Handle mobile touch controls
+      if (!gameOver) {
+        if (leftPressed) player.move(-300, 0);
+        if (rightPressed) player.move(300, 0);
+      }
+
       if (player.pos.x < 0) player.pos.x = 0;
       if (player.pos.x > ctx.width()) player.pos.x = ctx.width();
       if (player.pos.y > ctx.height() + 50) {

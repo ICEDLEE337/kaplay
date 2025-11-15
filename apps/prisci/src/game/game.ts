@@ -15,7 +15,29 @@ export function initGame(canvasId: string): void {
   ctx.setGravity(1600);
 
   let score = 0;
+  let highScore = 0;
+  try {
+    const stored = (globalThis as any).localStorage?.getItem('highScore');
+    if (stored) highScore = parseInt(stored);
+  } catch (e) {
+    // LocalStorage not available
+  }
   let gameOver = false;
+  let lives = 3;
+  let combo = 0;
+  let comboTimer = 0;
+  let baseObstacleSpeed = 200;
+  let hasDoubleJump = false;
+  let hasShield = false;
+  let jumpsLeft = 1;
+
+  // Platform definitions for smart coin spawning
+  const platformData = [
+    { x: 150, y: 450, w: 200, h: 20 },
+    { x: 450, y: 350, w: 150, h: 20 },
+    { x: 100, y: 250, w: 180, h: 20 },
+    { x: 500, y: 200, w: 200, h: 20 },
+  ];
 
   // Set up the game scene
   ctx.scene('main', () => {
@@ -27,6 +49,32 @@ export function initGame(canvasId: string): void {
       ctx.z(100),
     ]);
 
+    // High score display
+    const highScoreLabel = ctx.add([
+      ctx.text(`Best: ${highScore}`, { size: 18 }),
+      ctx.pos(20, 50),
+      ctx.color(255, 200, 100),
+      ctx.z(100),
+    ]);
+
+    // Combo display
+    const comboLabel = ctx.add([
+      ctx.text('', { size: 20 }),
+      ctx.pos(ctx.width() / 2, 60),
+      ctx.anchor('center'),
+      ctx.color(255, 255, 100),
+      ctx.z(100),
+    ]);
+
+    // Lives display
+    const livesLabel = ctx.add([
+      ctx.text(`Lives: ${lives}`, { size: 24 }),
+      ctx.pos(ctx.width() - 20, 20),
+      ctx.anchor('topright'),
+      ctx.color(255, 100, 100),
+      ctx.z(100),
+    ]);
+
     // Create ground
     ctx.add([
       ctx.rect(ctx.width(), 40),
@@ -35,18 +83,13 @@ export function initGame(canvasId: string): void {
       ctx.body({ isStatic: true }),
       ctx.color(100, 100, 100),
       'ground',
+      'platform', // Make ground also a platform
     ]);
 
     // Create platforms
-    const platforms = [
-      { x: 150, y: 450, w: 200, h: 20 },
-      { x: 450, y: 350, w: 150, h: 20 },
-      { x: 100, y: 250, w: 180, h: 20 },
-      { x: 500, y: 200, w: 200, h: 20 },
-    ];
-
-    platforms.forEach((p) => {
-      ctx.add([
+    const platforms: any[] = [];
+    platformData.forEach((p) => {
+      const platform = ctx.add([
         ctx.rect(p.w, p.h),
         ctx.pos(p.x, p.y),
         ctx.area(),
@@ -54,6 +97,7 @@ export function initGame(canvasId: string): void {
         ctx.color(80, 150, 200),
         'platform',
       ]);
+      platforms.push({ ...p, obj: platform });
     });
 
     // Create player
@@ -67,10 +111,11 @@ export function initGame(canvasId: string): void {
       'player',
     ]);
 
-    // Spawn coins
+    // Smart coin spawning - only near platforms
     function spawnCoin() {
-      const x = ctx.rand(50, ctx.width() - 50);
-      const y = ctx.rand(100, 400);
+      const platform = ctx.choose(platformData);
+      const x = platform.x + ctx.rand(20, platform.w - 20);
+      const y = platform.y - ctx.rand(40, 80); // Above platform
 
       ctx.add([
         ctx.circle(10),
@@ -78,18 +123,50 @@ export function initGame(canvasId: string): void {
         ctx.area(),
         ctx.color(255, 220, 0),
         ctx.anchor('center'),
+        ctx.outline(2, ctx.rgb(200, 180, 0)),
         'coin',
       ]);
     }
 
+    // Spawn power-ups
+    function spawnPowerUp() {
+      if (gameOver) return;
+
+      const types = ['doubleJump', 'shield'];
+      const type = ctx.choose(types);
+      const platform = ctx.choose(platformData);
+      const x = platform.x + ctx.rand(20, platform.w - 20);
+      const y = platform.y - 60;
+
+      const color = type === 'doubleJump' ? ctx.rgb(100, 200, 255) : ctx.rgb(255, 100, 200);
+
+      ctx.add([
+        ctx.rect(20, 20),
+        ctx.pos(x, y),
+        ctx.area(),
+        ctx.color(color),
+        ctx.anchor('center'),
+        ctx.outline(2),
+        'powerup',
+        { type },
+      ]);
+
+      ctx.wait(ctx.rand(10, 15), spawnPowerUp);
+    }
+
     // Initial coins
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 6; i++) {
       spawnCoin();
     }
 
-    // Spawn obstacles
+    ctx.wait(8, spawnPowerUp);
+
+    // Spawn obstacles with variety
     function spawnObstacle() {
       if (gameOver) return;
+
+      const currentSpeed = baseObstacleSpeed + (score / 10);
+      const pattern = ctx.choose(['straight', 'wave', 'bounce']);
 
       const obstacle = ctx.add([
         ctx.rect(30, 30),
@@ -98,17 +175,28 @@ export function initGame(canvasId: string): void {
         ctx.color(255, 50, 50),
         ctx.anchor('center'),
         'obstacle',
-        { speed: 200 },
+        { speed: currentSpeed, pattern, time: 0, startY: 0 },
       ]);
 
+      obstacle.startY = obstacle.pos.y;
+
       obstacle.onUpdate(() => {
+        obstacle.time += ctx.dt();
         obstacle.move(-obstacle.speed, 0);
+
+        // Different movement patterns
+        if (obstacle.pattern === 'wave') {
+          obstacle.pos.y = obstacle.startY + Math.sin(obstacle.time * 3) * 50;
+        } else if (obstacle.pattern === 'bounce') {
+          obstacle.pos.y = obstacle.startY + Math.abs(Math.sin(obstacle.time * 4)) * 80;
+        }
+
         if (obstacle.pos.x < -50) {
           ctx.destroy(obstacle);
         }
       });
 
-      ctx.wait(ctx.rand(2, 4), spawnObstacle);
+      ctx.wait(ctx.rand(1.5, 3), spawnObstacle);
     }
 
     ctx.wait(3, spawnObstacle);
@@ -122,59 +210,187 @@ export function initGame(canvasId: string): void {
       if (!gameOver) player.move(300, 0);
     });
 
-    ctx.onKeyPress('space', () => {
-      if (!gameOver && player.isGrounded()) {
-        player.jump(500);
-      }
+    ctx.onKeyDown('a', () => {
+      if (!gameOver) player.move(-300, 0);
     });
 
-    ctx.onKeyPress('up', () => {
-      if (!gameOver && player.isGrounded()) {
-        player.jump(500);
-      }
+    ctx.onKeyDown('d', () => {
+      if (!gameOver) player.move(300, 0);
     });
 
-    // Collect coins
+    // Handle jumping with double jump
+    function doJump() {
+      if (gameOver) return;
+      if (player.isGrounded()) {
+        player.jump(600); // Increased from 500
+        jumpsLeft = hasDoubleJump ? 2 : 1;
+      } else if (jumpsLeft > 0 && hasDoubleJump) {
+        player.jump(600); // Increased from 500
+        jumpsLeft--;
+      }
+    }
+
+    ctx.onKeyPress('space', doJump);
+    ctx.onKeyPress('up', doJump);
+    ctx.onKeyPress('w', doJump);
+
+    // Reset jumps when grounded
+    player.onGround(() => {
+      jumpsLeft = hasDoubleJump ? 2 : 1;
+    });
+
+    // Collect coins with combo system
     player.onCollide('coin', (coin) => {
       ctx.destroy(coin);
-      score += 10;
+      
+      // Combo system
+      combo++;
+      comboTimer = 3; // 3 seconds to maintain combo
+      const multiplier = Math.min(combo, 10);
+      const points = 10 * multiplier;
+      score += points;
+      
       scoreLabel.text = `Score: ${score}`;
+      comboLabel.text = combo > 1 ? `Combo x${combo}!` : '';
+      
+      // Visual feedback
+      ctx.shake(2);
+      
       spawnCoin();
     });
 
-    // Hit obstacle - game over
-    player.onCollide('obstacle', () => {
-      if (gameOver) return;
-      gameOver = true;
+    // Collect power-ups
+    player.onCollide('powerup', (powerup) => {
+      ctx.destroy(powerup);
+      ctx.shake(4);
 
-      ctx.add([
-        ctx.text('GAME OVER!', { size: 48 }),
-        ctx.pos(ctx.width() / 2, ctx.height() / 2 - 50),
-        ctx.anchor('center'),
-        ctx.color(255, 100, 100),
-      ]);
+      if (powerup.type === 'doubleJump') {
+        hasDoubleJump = true;
+        jumpsLeft = 2;
+        ctx.add([
+          ctx.text('Double Jump!', { size: 24 }),
+          ctx.pos(ctx.width() / 2, ctx.height() / 2),
+          ctx.anchor('center'),
+          ctx.color(100, 200, 255),
+          ctx.opacity(1),
+          ctx.lifespan(2),
+          ctx.z(100),
+        ]);
+      } else if (powerup.type === 'shield') {
+        hasShield = true;
+        player.color = ctx.rgb(255, 200, 255);
+        ctx.add([
+          ctx.text('Shield Active!', { size: 24 }),
+          ctx.pos(ctx.width() / 2, ctx.height() / 2),
+          ctx.anchor('center'),
+          ctx.color(255, 100, 200),
+          ctx.opacity(1),
+          ctx.lifespan(2),
+          ctx.z(100),
+        ]);
 
-      ctx.add([
-        ctx.text(`Final Score: ${score}`, { size: 32 }),
-        ctx.pos(ctx.width() / 2, ctx.height() / 2 + 20),
-        ctx.anchor('center'),
-        ctx.color(255, 255, 255),
-      ]);
-
-      ctx.add([
-        ctx.text('Press R to restart', { size: 24 }),
-        ctx.pos(ctx.width() / 2, ctx.height() / 2 + 70),
-        ctx.anchor('center'),
-        ctx.color(200, 200, 200),
-      ]);
+        ctx.wait(10, () => {
+          hasShield = false;
+          player.color = ctx.rgb(100, 255, 100);
+        });
+      }
     });
 
-    // Keep player in bounds
+    // Hit obstacle - lose life or game over
+    player.onCollide('obstacle', (obstacle) => {
+      if (gameOver) return;
+
+      ctx.destroy(obstacle);
+      ctx.shake(10);
+
+      if (hasShield) {
+        // Shield absorbs hit
+        hasShield = false;
+        player.color = ctx.rgb(100, 255, 100);
+        return;
+      }
+
+      lives--;
+      livesLabel.text = `Lives: ${lives}`;
+      combo = 0;
+      comboLabel.text = '';
+
+      if (lives <= 0) {
+        gameOver = true;
+
+        // Update high score
+        if (score > highScore) {
+          highScore = score;
+          highScoreLabel.text = `Best: ${highScore}`;
+          try {
+            (globalThis as any).localStorage?.setItem('highScore', highScore.toString());
+          } catch (e) {
+            // LocalStorage not available
+          }
+        }
+
+        ctx.add([
+          ctx.text('GAME OVER!', { size: 48 }),
+          ctx.pos(ctx.width() / 2, ctx.height() / 2 - 50),
+          ctx.anchor('center'),
+          ctx.color(255, 100, 100),
+        ]);
+
+        ctx.add([
+          ctx.text(`Final Score: ${score}`, { size: 32 }),
+          ctx.pos(ctx.width() / 2, ctx.height() / 2 + 20),
+          ctx.anchor('center'),
+          ctx.color(255, 255, 255),
+        ]);
+
+        if (score === highScore && score > 0) {
+          ctx.add([
+            ctx.text('NEW HIGH SCORE!', { size: 24 }),
+            ctx.pos(ctx.width() / 2, ctx.height() / 2 - 100),
+            ctx.anchor('center'),
+            ctx.color(255, 215, 0),
+          ]);
+        }
+
+        ctx.add([
+          ctx.text('Press R to restart', { size: 24 }),
+          ctx.pos(ctx.width() / 2, ctx.height() / 2 + 70),
+          ctx.anchor('center'),
+          ctx.color(200, 200, 200),
+        ]);
+      } else {
+        // Flash red when hit
+        player.color = ctx.rgb(255, 100, 100);
+        ctx.wait(0.2, () => {
+          player.color = ctx.rgb(100, 255, 100);
+        });
+      }
+    });
+
+    // Keep player in bounds and reset if falling off
     player.onUpdate(() => {
       if (player.pos.x < 0) player.pos.x = 0;
       if (player.pos.x > ctx.width()) player.pos.x = ctx.width();
-      if (player.pos.y > ctx.height()) {
-        gameOver = true;
+      if (player.pos.y > ctx.height() + 50) {
+        // Reset to starting position
+        player.pos = ctx.vec2(100, 100);
+        lives--;
+        livesLabel.text = `Lives: ${lives}`;
+        combo = 0;
+        comboLabel.text = '';
+
+        if (lives <= 0) {
+          gameOver = true;
+        }
+      }
+
+      // Update combo timer
+      if (comboTimer > 0 && !gameOver) {
+        comboTimer -= ctx.dt();
+        if (comboTimer <= 0 && combo > 0) {
+          combo = 0;
+          comboLabel.text = '';
+        }
       }
     });
 
@@ -182,17 +398,23 @@ export function initGame(canvasId: string): void {
     ctx.onKeyPress('r', () => {
       if (gameOver) {
         score = 0;
+        lives = 3;
         gameOver = false;
+        combo = 0;
+        hasDoubleJump = false;
+        hasShield = false;
+        jumpsLeft = 1;
+        baseObstacleSpeed = 200;
         ctx.go('main');
       }
     });
 
     // Instructions
     ctx.add([
-      ctx.text('Arrow Keys/WASD: Move | SPACE/UP: Jump | Collect coins, avoid red squares!', {
+      ctx.text('WASD/Arrows: Move & Jump | Collect coins! Avoid red! Get powerups!', {
         size: 14,
       }),
-      ctx.pos(ctx.width() / 2, 20),
+      ctx.pos(ctx.width() / 2, ctx.height() - 20),
       ctx.anchor('center'),
       ctx.color(200, 200, 200),
     ]);

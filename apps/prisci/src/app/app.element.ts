@@ -9,6 +9,9 @@ export class AppElement extends HTMLElement {
     this.innerHTML = `
       <div id="game-container">
         <canvas id="game-canvas"></canvas>
+        <button id="btn-restart" class="restart-btn hidden" aria-label="Restart game">
+          <span class="restart-text">RESTART</span>
+        </button>
         <div id="mobile-controls" class="mobile-controls">
           <div class="dpad-container">
             <button id="btn-left" class="control-btn dpad-btn left-btn" aria-label="Move left">

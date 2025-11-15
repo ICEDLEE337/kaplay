@@ -210,6 +210,35 @@ export function initGame(canvasId: string): void {
     const leftBtn = document.getElementById('btn-left');
     const rightBtn = document.getElementById('btn-right');
     const jumpBtn = document.getElementById('btn-jump');
+    const restartBtn = document.getElementById('btn-restart');
+
+    // Restart function
+    function restartGame() {
+      score = 0;
+      lives = 3;
+      gameOver = false;
+      combo = 0;
+      hasDoubleJump = false;
+      hasShield = false;
+      jumpsLeft = 1;
+      baseObstacleSpeed = 200;
+      if (restartBtn) {
+        restartBtn.classList.add('hidden');
+      }
+      ctx.go('main');
+    }
+
+    // Wire up restart button
+    if (restartBtn) {
+      const handleRestart = (e: Event) => {
+        e.preventDefault();
+        if (gameOver) {
+          restartGame();
+        }
+      };
+      restartBtn.addEventListener('touchstart', handleRestart);
+      restartBtn.addEventListener('click', handleRestart);
+    }
 
     // Handle jumping with double jump
     function doJump() {
@@ -372,6 +401,11 @@ export function initGame(canvasId: string): void {
       if (lives <= 0) {
         gameOver = true;
 
+        // Show restart button
+        if (restartBtn) {
+          restartBtn.classList.remove('hidden');
+        }
+
         // Update high score
         if (score > highScore) {
           highScore = score;
@@ -454,18 +488,10 @@ export function initGame(canvasId: string): void {
       }
     });
 
-    // Restart game
+    // Restart game with keyboard
     ctx.onKeyPress('r', () => {
       if (gameOver) {
-        score = 0;
-        lives = 3;
-        gameOver = false;
-        combo = 0;
-        hasDoubleJump = false;
-        hasShield = false;
-        jumpsLeft = 1;
-        baseObstacleSpeed = 200;
-        ctx.go('main');
+        restartGame();
       }
     });
 

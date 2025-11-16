@@ -31,6 +31,7 @@ export function initGame(canvasId: string): void {
   let hasDoubleJump = false;
   let hasShield = false;
   let jumpsLeft = 1;
+  let sceneRestarts = 0; // Track scene resets to ignore stale timers
 
   // Platform definitions for smart coin spawning
   const platformData = [
@@ -42,6 +43,8 @@ export function initGame(canvasId: string): void {
 
   // Set up the game scene
   ctx.scene('main', () => {
+    // Capture the scene ID to detect restart/stale callbacks
+    const currentSceneRestart = ++sceneRestarts;
     // Score display
     const scoreLabel = ctx.add([
       ctx.text('Score: 0', { size: 24 }),
@@ -131,7 +134,7 @@ export function initGame(canvasId: string): void {
 
     // Spawn power-ups
     function spawnPowerUp() {
-      if (gameOver) return;
+      if (gameOver || currentSceneRestart !== sceneRestarts) return;
 
       const types = ['doubleJump', 'shield'];
       const type = ctx.choose(types);
@@ -164,7 +167,7 @@ export function initGame(canvasId: string): void {
 
     // Spawn obstacles with variety
     function spawnObstacle() {
-      if (gameOver) return;
+      if (gameOver || currentSceneRestart !== sceneRestarts) return;
 
       const currentSpeed = baseObstacleSpeed + (score / 10);
       const pattern = ctx.choose(['straight', 'wave', 'bounce']);
@@ -206,41 +209,20 @@ export function initGame(canvasId: string): void {
     let leftPressed = false;
     let rightPressed = false;
 
-    // Set up mobile button controls
-    const leftBtn = document.getElementById('btn-left');
-    const rightBtn = document.getElementById('btn-right');
-    const jumpBtn = document.getElementById('btn-jump');
-    const restartBtn = document.getElementById('btn-restart');
+    // Set up mobile button controls (grab elements once)
+    const leftBtn = document.getElementById('btn-left') as HTMLElement | null;
+    const rightBtn = document.getElementById('btn-right') as HTMLElement | null;
+    const jumpBtn = document.getElementById('btn-jump') as HTMLElement | null;
+    const restartBtn = document.getElementById('btn-restart') as HTMLElement | null;
 
-    // Restart function
-    function restartGame() {
-      score = 0;
-      lives = 3;
-      gameOver = false;
-      combo = 0;
-      hasDoubleJump = false;
-      hasShield = false;
-      jumpsLeft = 1;
-      baseObstacleSpeed = 200;
-      if (restartBtn) {
-        restartBtn.classList.add('hidden');
-      }
-      ctx.go('main');
-    }
+    // Define handlers so we can remove/add them idempotently
+    const startLeft = (e: Event) => { if (e.cancelable) e.preventDefault(); leftPressed = true; };
+    const endLeft = (e: Event) => { if (e.cancelable) e.preventDefault(); leftPressed = false; };
 
-    // Wire up restart button
-    if (restartBtn) {
-      const handleRestart = (e: Event) => {
-        e.preventDefault();
-        if (gameOver) {
-          restartGame();
-        }
-      };
-      restartBtn.addEventListener('touchstart', handleRestart);
-      restartBtn.addEventListener('click', handleRestart);
-    }
+    const startRight = (e: Event) => { if (e.cancelable) e.preventDefault(); rightPressed = true; };
+    const endRight = (e: Event) => { if (e.cancelable) e.preventDefault(); rightPressed = false; };
 
-    // Handle jumping with double jump
+    // Handle jumping with double jump - define before handlers that reference it
     function doJump() {
       if (gameOver) return;
       if (player.isGrounded()) {
@@ -252,47 +234,77 @@ export function initGame(canvasId: string): void {
       }
     }
 
-    // Mobile touch controls
+    const handleJump = (e: Event) => { if (e.cancelable) e.preventDefault(); doJump(); };
+
+    const handleRestart = (e: Event) => { if (e.cancelable) e.preventDefault(); if (gameOver) restartGame(); };
+
+    // Restart function
+    function restartGame() {
+      // reset game state
+      score = 0;
+      lives = 3;
+      gameOver = false;
+      combo = 0;
+      hasDoubleJump = false;
+      hasShield = false;
+      jumpsLeft = 1;
+      baseObstacleSpeed = 200;
+      leftPressed = false;
+      rightPressed = false;
+
+      // hide restart UI
+      if (restartBtn) {
+        restartBtn.classList.add('hidden');
+      }
+
+      // navigate back to main scene (kaplay should clear previous scene timers)
+      ctx.go('main');
+    }
+
+    // Idempotently attach mobile listeners (remove first to avoid duplicates)
+    if (restartBtn) {
+      restartBtn.removeEventListener('touchstart', handleRestart as EventListener);
+      restartBtn.removeEventListener('click', handleRestart as EventListener);
+      restartBtn.addEventListener('touchstart', handleRestart, { passive: false });
+      restartBtn.addEventListener('click', handleRestart);
+    }
+
     if (leftBtn) {
-      const startLeft = (e: Event) => {
-        e.preventDefault();
-        leftPressed = true;
-      };
-      const endLeft = (e: Event) => {
-        e.preventDefault();
-        leftPressed = false;
-      };
-      leftBtn.addEventListener('touchstart', startLeft);
-      leftBtn.addEventListener('touchend', endLeft);
-      leftBtn.addEventListener('touchcancel', endLeft);
+      leftBtn.removeEventListener('touchstart', startLeft as EventListener);
+      leftBtn.removeEventListener('touchend', endLeft as EventListener);
+      leftBtn.removeEventListener('touchcancel', endLeft as EventListener);
+      leftBtn.removeEventListener('mousedown', startLeft as EventListener);
+      leftBtn.removeEventListener('mouseup', endLeft as EventListener);
+      leftBtn.removeEventListener('mouseleave', endLeft as EventListener);
+
+      leftBtn.addEventListener('touchstart', startLeft, { passive: false });
+      leftBtn.addEventListener('touchend', endLeft, { passive: false });
+      leftBtn.addEventListener('touchcancel', endLeft, { passive: false });
       leftBtn.addEventListener('mousedown', startLeft);
       leftBtn.addEventListener('mouseup', endLeft);
       leftBtn.addEventListener('mouseleave', endLeft);
     }
 
     if (rightBtn) {
-      const startRight = (e: Event) => {
-        e.preventDefault();
-        rightPressed = true;
-      };
-      const endRight = (e: Event) => {
-        e.preventDefault();
-        rightPressed = false;
-      };
-      rightBtn.addEventListener('touchstart', startRight);
-      rightBtn.addEventListener('touchend', endRight);
-      rightBtn.addEventListener('touchcancel', endRight);
+      rightBtn.removeEventListener('touchstart', startRight as EventListener);
+      rightBtn.removeEventListener('touchend', endRight as EventListener);
+      rightBtn.removeEventListener('touchcancel', endRight as EventListener);
+      rightBtn.removeEventListener('mousedown', startRight as EventListener);
+      rightBtn.removeEventListener('mouseup', endRight as EventListener);
+      rightBtn.removeEventListener('mouseleave', endRight as EventListener);
+
+      rightBtn.addEventListener('touchstart', startRight, { passive: false });
+      rightBtn.addEventListener('touchend', endRight, { passive: false });
+      rightBtn.addEventListener('touchcancel', endRight, { passive: false });
       rightBtn.addEventListener('mousedown', startRight);
       rightBtn.addEventListener('mouseup', endRight);
       rightBtn.addEventListener('mouseleave', endRight);
     }
 
     if (jumpBtn) {
-      const handleJump = (e: Event) => {
-        e.preventDefault();
-        doJump();
-      };
-      jumpBtn.addEventListener('touchstart', handleJump);
+      jumpBtn.removeEventListener('touchstart', handleJump as EventListener);
+      jumpBtn.removeEventListener('mousedown', handleJump as EventListener);
+      jumpBtn.addEventListener('touchstart', handleJump, { passive: false });
       jumpBtn.addEventListener('mousedown', handleJump);
     }
 

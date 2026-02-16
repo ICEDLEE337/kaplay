@@ -10,6 +10,7 @@ export function initGame(canvasId: string): void {
     height: 600,
     background: [20, 20, 40],
     touchToMouse: true, // Enable touch events
+    pixelDensity: 1, // Cap at 1x to avoid Retina overhead on iPad
   });
 
   // Set gravity

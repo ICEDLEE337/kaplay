@@ -5,9 +5,11 @@ export class AppElement extends HTMLElement {
   public static observedAttributes = [];
 
   connectedCallback() {
+    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+
     // Create canvas element for the game with mobile controls
     this.innerHTML = `
-      <div id="game-container">
+      <div id="game-container" class="${isTouchDevice ? 'touch-device' : ''}">
         <canvas id="game-canvas"></canvas>
         <button id="btn-restart" class="restart-btn hidden" aria-label="Restart game">
           <span class="restart-text">RESTART</span>

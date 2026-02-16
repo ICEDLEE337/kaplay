@@ -10,7 +10,7 @@ export function initGame(canvasId: string): void {
     height: 600,
     background: [20, 20, 40],
     touchToMouse: true, // Enable touch events
-    pixelDensity: 1, // Cap at 1x to avoid Retina overhead on iPad
+    pixelDensity: 1, // Cap at 1x to avoid Retina overhead on mobile
   });
 
   // Set gravity
@@ -197,7 +197,7 @@ export function initGame(canvasId: string): void {
         }
 
         if (obstacle.pos.x < -50) {
-          ctx.destroy(obstacle);
+          safeDestroy(obstacle);
         }
       });
 
@@ -335,9 +335,30 @@ export function initGame(canvasId: string): void {
       jumpsLeft = hasDoubleJump ? 2 : 1;
     });
 
+    // Deferred destroy: avoid destroying objects mid-collision-check
+    // which can cause null references in kaplay's internal overlap tests.
+    const pendingDestroy = new Set<any>();
+    function safeDestroy(obj: any) {
+      if (!obj || pendingDestroy.has(obj)) return;
+      pendingDestroy.add(obj);
+      // Hide immediately so it doesn't interact further
+      obj.hidden = true;
+      if (obj.area) {
+        try { obj.pos = ctx.vec2(-9999, -9999); } catch (_) { /* already gone */ }
+      }
+    }
+    ctx.onUpdate(() => {
+      if (pendingDestroy.size > 0) {
+        pendingDestroy.forEach((obj) => {
+          try { ctx.destroy(obj); } catch (_) { /* already destroyed */ }
+        });
+        pendingDestroy.clear();
+      }
+    });
+
     // Collect coins with combo system
     player.onCollide('coin', (coin) => {
-      ctx.destroy(coin);
+      safeDestroy(coin);
 
       // Combo system
       combo++;
@@ -357,7 +378,7 @@ export function initGame(canvasId: string): void {
 
     // Collect power-ups
     player.onCollide('powerup', (powerup) => {
-      ctx.destroy(powerup);
+      safeDestroy(powerup);
       ctx.shake(4);
 
       if (powerup.type === 'doubleJump') {
@@ -396,7 +417,7 @@ export function initGame(canvasId: string): void {
     player.onCollide('obstacle', (obstacle) => {
       if (gameOver) return;
 
-      ctx.destroy(obstacle);
+      safeDestroy(obstacle);
       ctx.shake(10);
 
       if (hasShield) {
